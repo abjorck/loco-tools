@@ -13,6 +13,7 @@ url = "1.5"
 tokio = { version = "0.2", features = ["full"] }
 exitcode = "1.1.2"
 async-trait = "0.1.36"
+xml-rs = "0.8"
 
 [profile.release]
 opt-level = "s"

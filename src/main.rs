@@ -1,26 +1,27 @@
-use loco::apis::{auth_api, ping_api, Error};
-use loco::apis::configuration::{Configuration, ApiKey};
-
+extern crate exitcode;
 extern crate futures;
 extern crate reqwest;
-extern crate exitcode;
+extern crate xml;
+
+use std::env;
 
 use argh::FromArgs;
-use futures::Future;
-use std::alloc::handle_alloc_error;
-use loco::apis::ping_api::PingError;
-use loco::models::{PingResponse, Credentials};
-use std::env;
-use crate::Keytype::{RO, MISSING, RW, DENIED};
-use loco::apis::auth_api::AuthVerifyError;
-use std::str::FromStr;
-use crate::Platform::{IOS, Android};
-use loco::apis::export_api::{export_all, export_locale, ExportLocaleError};
 use async_trait::async_trait;
+
+use loco::{
+    apis::configuration::{ApiKey, Configuration},
+    apis::{assets_api, auth_api, Error, export_api, ping_api},
+    models::{Asset, Credentials, PingResponse},
+};
+
+use xml::reader::XmlEvent;
+
+use crate::Keytype::{DENIED, MISSING, RO, RW};
+use crate::Platform::{Android, IOS};
 
 
 #[derive(FromArgs, PartialEq, Debug)]
-/// Loco (locailize.biz) API CLI
+/// Loco (https://localize.biz) API CLI
 struct TopLevel {
     /// loco API key generated from project dashboard,
     ///  (required if not set in env var LOCO_APIKEY)
@@ -37,6 +38,7 @@ struct TopLevel {
 enum SubCommandEnum {
     Export(ExportCommand),
     CheckAuth(CheckAuth),
+    Create(CreateCommand),
 }
 
 #[derive(Debug, PartialEq)]
@@ -62,10 +64,31 @@ struct ExportCommand {
     /// language locale to operate on, all if omitted
     #[argh(option, short = 'l')]
     locale: Option<String>,
+
     /// export iOS or Android file format
     #[argh(option, short = 'p', from_str_fn(parse_platform))]
     platform: Platform,
 
+    ///do validation checks on xml
+    #[argh(switch, short = 'v')]
+    validate: bool,
+
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Create new translatable assets
+#[argh(subcommand, name = "create")]
+struct CreateCommand {
+    /// language locale to operate on, all if omitted
+    #[argh(option, short = 't')]
+    tags: Option<String>,
+
+    /// asset id to create, strongly suggested - if omitted will be generated
+    #[argh(option, short = 'i')]
+    id: Option<String>,
+
+    #[argh(positional)]
+    content: String,
 }
 
 #[async_trait]
@@ -99,33 +122,59 @@ impl ApiCommand<String> for ExportCommand {
             Android => ("xml", "android")
         };
         let key = Some(conf.api_key.as_ref().expect("api key").key.as_str());
-        let res = export_locale(conf, self.locale.as_ref().unwrap_or(&"all".to_string()).as_str(),
-                                ext, None, Some(filter), None, None, None, Some("en_GB"), None, None,
-                                None, Some("UTF-8"), None, Some(true), None, key).await;
+        let res = export_api::export_locale(conf, self.locale.as_ref().unwrap_or(&"all".to_string()).as_str(),
+                                            ext, None, Some(filter), Some("name"), None, None, Some("en_GB"), None, None,
+                                            None, Some("UTF-8"), None, Some(true), None, key).await;
         res.expect("exporterror")
+    }
+}
+
+#[async_trait]
+impl ApiCommand<Result<String, Error<assets_api::CreateAssetError>>> for CreateCommand {
+    async fn call(&self, conf: &Configuration) -> Result<String, Error<assets_api::CreateAssetError>> {
+        let key = Some(conf.api_key.as_ref().expect("api key").key.as_str());
+        let id = self.id.as_ref().map(|s| s.as_ref());
+        let ret = assets_api::create_asset(conf, key, id, Some(self.content.as_str()), None, None, None, Option::from("provisional"), true).await;
+        match ret {
+            Ok(asset) => {
+                println!("created asset: {:?}", asset);
+                let tags = match self.tags.as_ref()
+                    .map(|s| s.split(',')) {
+                    Some(t) => {
+                        t
+                    }
+                    None => {
+                        return Ok(asset.id);
+                    }
+                };
+
+                for tag in tags {
+                    let res = assets_api::tag_asset(conf, asset.id.as_str(), tag, key).await;
+                    match res {
+                        Ok(asset) => {
+                            println!("tagged asset: {:?}", asset);
+                        }
+                        Err(e) => {
+                            println!("WARNING: tagging asset failed {:?}", e);
+                        }
+                    }
+                }
+
+                Ok(asset.id)
+            }
+            Err(e) => {
+                println!("Error: create asset failed {:?}", e);
+
+                Err(e)
+            }
+        }
     }
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Check API key access
 #[argh(subcommand, name = "checkauth")]
-struct CheckAuth {
-// /// loco API key generated from project dashboard, required if not set in env var LOCO_APIKEY
-// #[argh(option, short = 'k')]
-// apikey: Option<String>,
-//
-// /// language locale to operate on, all if omitted
-// #[argh(option, short = 'l')]
-// locale: Option<String>,
-
-// /// how high to go
-// #[argh(option)]
-// height: usize,
-//
-// /// an optional nickname for the pilot
-// #[argh(option)]
-// pilot_nickname: Option<String>,eller de va
-}
+struct CheckAuth {}
 
 struct AppState {
     conf: Configuration
@@ -158,24 +207,68 @@ async fn main() -> Result<(), ()> {
 
     match args.nested {
         SubCommandEnum::Export(export) => {
-            println!("export for locale. {:?}", export);
-            let export = export.call(&conf).await;
-            println!("{}", export);
+            eprintln!("export for locale. {:?}", export);
+            let export_data = export.call(&conf).await;
+
+            if export.validate {
+                let xml = xml::EventReader::from_str(export_data.as_str());
+                let mut el_name = String::new();
+                for e in xml {
+                    match e {
+                        Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                            //el_name =
+                            //let attr =
+                            // attributes.iter()
+                            //     .for_each(|a| println!("{:?}", a));
+                            //.find(|&a| a.name.local_name == "name");
+                            // match attr {
+                            //     Some(a) => {
+                            //         println!("{:?}", a.value);
+                            //         el_name = a.value.replace('.', "_");
+                            //     }
+                            //     None => {
+                            //         println!("{}", "Not a named string, skipping");
+                            //         continue;
+                            //     }
+                            // }
+                            // .map(|a|a.value.clone())
+                            // .expect("no xml attr name?");
+//                        el_name = name.local_name.replace('.', "_");
+                        }
+                        Ok(XmlEvent::Characters(string)) => {
+                            if string.contains("% @") { // a common error case when translators break printf things
+                                eprintln!("{} - '{}' contains broken formatting sequence % @", export.locale.clone().unwrap_or("".to_string()), el_name)
+                            }
+                        }
+                        Ok(XmlEvent::EndElement { .. }) => break,
+                        Err(e) => {
+                            eprintln!("Error: {}", e);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            println!("{}", export_data);
         }
         SubCommandEnum::CheckAuth(_) => {
-            println!("check auth");
+            eprintln!("check auth");
             let key_type = check_key(&conf).await;
-            println!("keytype result {:?}", key_type);
+            eprintln!("keytype result {:?}", key_type);
+        }
+        SubCommandEnum::Create(create) => {
+            match create.call(&conf).await {
+                Ok(_) => {
+                    eprintln!("Ok!");
+                }
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                }
+            };
         }
     }
+
     Ok(())
-//
-// let work = apicli.ping_api().ping().and_then(|res|{
-//     println!("pong? {:?}", res);
-//     futures::future::ok(())
-// });
-//
-// core.run(work).expect("failed to run core");
 }
 
 

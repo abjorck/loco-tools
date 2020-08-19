@@ -115,7 +115,7 @@ pub enum UntagAssetError {
 }
 
 
-    pub async fn create_asset(configuration: &configuration::Configuration, key: Option<&str>, id: Option<&str>, text: Option<&str>, _type: Option<&str>, context: Option<&str>, notes: Option<&str>, default: Option<&str>) -> Result<crate::models::Asset, Error<CreateAssetError>> {
+    pub async fn create_asset(configuration: &configuration::Configuration, key: Option<&str>, id: Option<&str>, text: Option<&str>, _type: Option<&str>, context: Option<&str>, notes: Option<&str>, default: Option<&str>, name_as_id: bool) -> Result<crate::models::Asset, Error<CreateAssetError>> {
         let client = &configuration.client;
 
         let uri_str = format!("{}/assets", configuration.base_path);
@@ -130,6 +130,10 @@ pub enum UntagAssetError {
         let mut form = reqwest::multipart::Form::new();
         if let Some(param_value) = id {
             form = form.text("id", param_value.to_string());
+            if name_as_id {
+                //legacy mode
+                form = form.text("name", param_value.to_string());
+            }
         }
         if let Some(param_value) = text {
             form = form.text("text", param_value.to_string());
