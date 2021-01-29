@@ -14,20 +14,20 @@ use crate::commands::tags::TagsCommand;
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Loco (https://localize.biz) API CLI
-pub(crate) struct TopLevel {
+pub struct TopLevel {
     /// loco API key generated from project dashboard,
     ///  (required if not set in env var LOCO_APIKEY)
     #[argh(option, short = 'k')]
-    pub(crate) apikey: Option<String>,
+    pub apikey: Option<String>,
 
     #[argh(subcommand)]
-    pub(crate) nested: SubCommandEnum,
+    pub nested: SubCommandEnum,
 }
 
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
-pub(crate) enum SubCommandEnum {
+pub enum SubCommandEnum {
     Export(ExportCommand),
     CheckAuth(CheckAuth),
     Create(CreateCommand),
@@ -35,9 +35,10 @@ pub(crate) enum SubCommandEnum {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum Platform {
+pub enum Platform {
     Android,
     IOS,
+    Server
 }
 
 fn parse_platform(s: &str) -> Result<Platform, String> {
@@ -45,8 +46,10 @@ fn parse_platform(s: &str) -> Result<Platform, String> {
         Ok(Platform::IOS)
     } else if s.to_lowercase().eq("android") {
         Ok(Platform::Android)
+    } else if s.to_lowercase().eq("server") {
+        Ok(Platform::Server)
     } else {
-        Err("Invalid platform, supported params: [android, ios]".to_string())
+        Err("Invalid platform, supported params: [android, ios, server]".to_string())
     }
 }
 
@@ -58,17 +61,17 @@ pub trait ApiCommand<T> {
 #[derive(FromArgs, PartialEq, Debug)]
 /// Check API key access
 #[argh(subcommand, name = "checkauth")]
-pub(crate) struct CheckAuth {}
+pub struct CheckAuth {}
 
 #[derive(Debug)]
-pub(crate) enum Keytype {
+pub enum Keytype {
     MISSING,
     DENIED,
     RO,
     RW,
 }
 
-pub(crate) async fn check_key(conf: &Configuration) -> Keytype {
+pub async fn check_key(conf: &Configuration) -> Keytype {
     match &conf.api_key {
         Some(k) => {
             let auth_rw = auth_api::auth_verify(&conf, Option::from(k.key.as_str()), true).await;

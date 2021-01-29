@@ -236,6 +236,7 @@ pub enum ExportTemplateError {
         }
 
         let req = req_builder.build()?;
+        //println!("{:?}",req.url());
         let resp = client.execute(req).await?;
 
         let status = resp.status();

@@ -10,7 +10,7 @@ use crate::commands::ApiCommand;
 #[derive(FromArgs, PartialEq, Debug)]
 /// Create new translatable assets
 #[argh(subcommand, name = "create")]
-pub(crate) struct CreateCommand {
+pub struct CreateCommand {
     /// language locale to operate on, all if omitted
     #[argh(option, short = 't')]
     tags: Option<String>,

@@ -1,6 +1,6 @@
 [package]
 name = "loco-tools"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Björck <bjorck@ustwo.com>"]
 edition = "2018"
 
@@ -15,7 +15,13 @@ exitcode = "1.1.2"
 async-trait = "0.1.36"
 xml-rs = "0.8"
 
+serde_derive = "^1.0" # should keep same version as the loco crate to minimize size
+serde = "^1.0"
+serde_json = "^1.0"
+
 [profile.release]
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+[lib]
